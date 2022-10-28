@@ -1,4 +1,5 @@
 data/*
+!data/List*
 imaqes/*
 RazaSM_200740241_CSC8639_Code.zip
 */.ipynb_checkpoints/*
