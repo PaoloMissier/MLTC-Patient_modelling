@@ -1,3 +1,4 @@
+*.tsv
 data/*
 !data/List*
 imaqes/*
