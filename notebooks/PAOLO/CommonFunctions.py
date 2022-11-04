@@ -247,4 +247,87 @@ def compute_all_bow_probabilities(lda_model):
     return lda_res_each_ptnt
 
 
+
+
+
+# bream down a bow into its stages, for instance:
+#  bow = ['OA', 'skin_ulcer', 'dermatitis']
+#  stages = [['OA'], ['OA', 'skin_ulcer'], ['OA', 'skin_ulcer', 'dermatitis']]
+def getStages(bow):
+        stages = []
+        for i in range(len(bow)):
+            stage = stages.append(bow[0:i+1])
+        return stages
+
+
+# look up each term in bowStage. add up all partial association strength for each topic, generating an array of size K = number of topic
+def assoc(bowstage, rwidf, topics_count):
+    assocVector = np.zeros(topics_count)
+    for term in bowstage:
+        row = rwidf.loc[rwidf['MLTC'] == term]
+#         print(row[['rwidf1', 'rwidf2', 'rwidf3', 'rwidf4']])
+        assocVector[0] += row['rwidf1']
+        assocVector[1] += row['rwidf2']
+        assocVector[2] += row['rwidf3']
+        assocVector[3] += row['rwidf4']
+    return assocVector
+
+
+
+##########################
+### compute the tensor that holds the patient-topic association __for incremental bag of terms in the patient's history__
+##########################
+
+## main method to compute the 'tensor' as a nested dictionary:
+# bows = list(bow)
+# bow = list(bowStage)
+# bowStage = list(term)
+# term --> association vector of size K = number of topics
+# so:
+#    all_patients_traj = { id(bow): one_patient_trajectory}
+#    one_patient_trajectory = { id(bowStage): assoc vector}
+#  to use hashing we need to create an id for each bow (id=patient) and one id for each stage in that patient's history.
+#  note that these are not the native patient IDs which are lost at this point
+#
+# return all_patients_traj
+#
+
+def computeTrajectoryAssociations(bows, rwidf, topics_count):
+
+    bowID2bow = dict()  ## need to use bowIDs as hash keys so this dict maps bowID to the actual bow content
+    bowId = 1 # makes hashing possible
+    all_patients_traj = dict()  ## top level dict
+    
+    for bow in bows:    # for each bag of word (each patient)
+#         print("processing bowId {0}: [{1}]".format(bowId, bow))
+        
+        bowID2bow[bowId] = bow
+        traj = all_patients_traj[bowId] = dict()  ## individual trajectory is itself a dict()
+        bowStageId = 1
+        for bowStage in getStages(bow):  # compute association vector for each of its stages
+#             print("processing bowStage [{0}]".format(bowStage))
+            
+            traj[bowStageId]  = assoc(bowStage, rwidf, topics_count)
+#             print("vector for bowStageId [{0}]: {1}".format(bowStageId, traj[bowStageId]))
+            bowStageId += 1
+#         print("trajectory: {0}\n".format(traj))
+        bowId += 1
+        if bowId % 1000 == 0:
+            print("{0} patients processed".format(bowId))
+#             break
+            
+    ## save main trajectories data structure
+
+    with open(ALL_TRAJECTORIES, 'wb') as f:
+        pickle.dump(all_patients_traj, f)
+
+    with open(BOWID2BOW, 'wb') as f:
+        pickle.dump(bowID2bow, f)
+
+    return all_patients_traj, bowID2bow
+
+
+def pprint(trajectory):
+    for bowStageId in trajectory.keys():
+        print("stage {0}: {1}".format(bowStageId, trajectory[bowStageId]))
         

@@ -247,6 +247,9 @@ def compute_all_bow_probabilities(lda_model):
     return lda_res_each_ptnt
 
 
+
+
+
 # bream down a bow into its stages, for instance:
 #  bow = ['OA', 'skin_ulcer', 'dermatitis']
 #  stages = [['OA'], ['OA', 'skin_ulcer'], ['OA', 'skin_ulcer', 'dermatitis']]
@@ -258,17 +261,17 @@ def getStages(bow):
 
 
 # look up each term in bowStage. add up all partial association strength for each topic, generating an array of size K = number of topic
-# def assoc(bowStage, rwidf):
-def assoc(bowstage, rwidf):
+def assoc(bowstage, rwidf, topics_count):
     assocVector = np.zeros(topics_count)
     for term in bowstage:
-        row = rwidf.loc[terms_topics_df['MLTC'] == term]
+        row = rwidf.loc[rwidf['MLTC'] == term]
 #         print(row[['rwidf1', 'rwidf2', 'rwidf3', 'rwidf4']])
         assocVector[0] += row['rwidf1']
         assocVector[1] += row['rwidf2']
         assocVector[2] += row['rwidf3']
         assocVector[3] += row['rwidf4']
     return assocVector
+
 
 
 ##########################
@@ -288,7 +291,8 @@ def assoc(bowstage, rwidf):
 #
 # return all_patients_traj
 #
-def computeTrajectoryAssociations(bows, rwidf):
+
+def computeTrajectoryAssociations(bows, rwidf, topics_count):
 
     bowID2bow = dict()  ## need to use bowIDs as hash keys so this dict maps bowID to the actual bow content
     bowId = 1 # makes hashing possible
@@ -303,21 +307,22 @@ def computeTrajectoryAssociations(bows, rwidf):
         for bowStage in getStages(bow):  # compute association vector for each of its stages
 #             print("processing bowStage [{0}]".format(bowStage))
             
-            traj[bowStageId]  = assoc(bowStage, rwidf)
+            traj[bowStageId]  = assoc(bowStage, rwidf, topics_count)
 #             print("vector for bowStageId [{0}]: {1}".format(bowStageId, traj[bowStageId]))
             bowStageId += 1
 #         print("trajectory: {0}\n".format(traj))
         bowId += 1
         if bowId % 1000 == 0:
             print("{0} patients processed".format(bowId))
+#             break
             
     ## save main trajectories data structure
 
     with open(ALL_TRAJECTORIES, 'wb') as f:
-        pickle.dump(trajectories, f)
+        pickle.dump(all_patients_traj, f)
 
     with open(BOWID2BOW, 'wb') as f:
-        pickle.dump(bowId2bow, f)
+        pickle.dump(bowID2bow, f)
 
     return all_patients_traj, bowID2bow
 
@@ -325,5 +330,4 @@ def computeTrajectoryAssociations(bows, rwidf):
 def pprint(trajectory):
     for bowStageId in trajectory.keys():
         print("stage {0}: {1}".format(bowStageId, trajectory[bowStageId]))
-        
         

@@ -3,7 +3,8 @@ data/*
 !data/List*
 imaqes/*
 RazaSM_200740241_CSC8639_Code.zip
-/notebooks/*/.ipynb_checkpoints/*
-/notebooks/.ipynb_checkpoints/*
+notebooks/*/.ipynb_checkpoints/*
+notebooks/PAOLO/.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/*
 .ipynb_checkpoints/*
 */__pycache__/*
