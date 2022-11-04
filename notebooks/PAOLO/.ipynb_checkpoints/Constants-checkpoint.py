@@ -3,6 +3,7 @@ WD = '/Users/npm65/OneDrive - Newcastle University/NIHR-AI-MLTC-M/CODE/cluster-a
 
 LTC_BINARY = DATA_PATH+'ltc_matrix_binary_mm4.tsv'
 BOWs = WD+'data/BOWs.pkl'
+LTCs = WD+'data/LTCSs.pkl'
 TERMS_REL_WEIGHTS_IDF = WD+'data/terms_rel_weights_idf.csv'
 LDA_MODEL = WD+'data/lda_model.pkl'
 ALL_TRAJECTORIES = WD+'data/trajectories.pkl'

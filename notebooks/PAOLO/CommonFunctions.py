@@ -24,8 +24,11 @@ from Constants import *
 
 #####
 ## from `ltc_patients` create `list_of_patients` if it does not exist
+## return list of BOW, one per patient
+## return list of unique disease terms
 def create_bows(bin_matrix):
     list_of_patients = []
+
 
     patients = bin_matrix['patient_id'].unique()
     ltcs = bin_matrix.drop('patient_id', axis = 1)
@@ -55,110 +58,16 @@ def create_bows(bin_matrix):
     ## cache for future use
     with open(BOWs, 'wb') as f:
         pickle.dump(list_of_patients, f)
+
+    with open(LTCs, 'wb') as f:
+            pickle.dump(ltcs, f)
+            
         
-    return list_of_patients
+    return list_of_patients, ltcs.columns
 
 
 
-# Build a dataframe with each term's relative weight within each topic
-# in: lda_model
 
-def compute_terms_topics_associations(lda_model):
-    # Creating a matrix of disease/MLTC/word distribution within each cluster
-
-    colnames_raw = ['MLTC', 'topic 1', 'topic 2', 'topic 3', 'topic 4']
-    colnames_final = ['rwidf1', 'rwidf2', 'rwidf3', 'rwidf4']
-
-    ## new df with one column per topic
-    df_word_weightage_bytopic = pd.DataFrame(columns=colnames_raw)
-
-    ## for each topic t
-    for t in range(len(colnames_raw)-1):
-        ## new df with schema [MLTC, topic_t]
-        
-#         print("t ={0}".format(t))
-
-        df_cal = pd.DataFrame(columns=['MLTC', colnames_raw[t+1]])  
-        
-        nm = list()
-        dst = list()
-        ## for each condition
-        ## 
-        for i in range(203):
-            ## https://radimrehurek.com/gensim/models/ldamodel.html?highlight=show_topics#gensim.models.ldamodel.LdaModel.show_topics
-            ## return list of {str, tuple of (str, float)}
-            name, dist = lda_model.show_topics(num_words=203, formatted=False)[t][1][i]
-            nm.append(name)   ## name of condition
-            dst.append(dist)  ## scores of term for each topic
-        df_cal[colnames_raw[t+1]] = dst
-        df_cal['MLTC'] = nm
-        df_cal.sort_values(by=['MLTC'], ignore_index=True, inplace=True)
-
-        df_word_weightage_bytopic[colnames_raw[t+1]] = df_cal[colnames_raw[t+1]]
-    df_word_weightage_bytopic['MLTC'] = df_cal['MLTC']
-
-#     print(df_word_weightage_bytopic.head)
-    
-    df_idf = df_word_weightage_bytopic.copy()
-
-    # Calculating disease term frequency in our corpus
-    disease_count = []
-
-    ## for each disease:
-    for i in df_idf['MLTC']:
-        count = 0
-        for k in bows:   # for each patient bow k
-            if i in k:   # found occurrence of term i in k
-                count = count +1            
-        disease_count.append(count)
-
-    # disease_count is a list that now becomes a new column 'idf'
-    df_idf['occurrences'] = disease_count
-
-    # Calculating inverse document frequency
-    df_idf['idf'] = 0. ## init new column
-    
-    for i in range(len(df_idf['occurrences'])):        
-        df_idf['idf'].loc[i] = math.log10(len(bows) / (df_idf['occurrences'].loc[i] + 1))
-    df_idf[colnames_final[0]] = ''
-    df_idf[colnames_final[1]] = ''
-    df_idf[colnames_final[2]] = ''
-    df_idf[colnames_final[3]] = ''
-
-    # Calculating relative weight for each word/disease
-
-    for i, rows in df_idf.iterrows():
-
-        sum = rows[1]+rows[2]+rows[3]+rows[4]
-        df_idf[colnames_final[0]][i] = rows[1]/(sum)
-        df_idf[colnames_final[1]][i] = rows[2]/(sum)
-        df_idf[colnames_final[2]][i] = rows[3]/(sum)
-        df_idf[colnames_final[3]][i] = rows[4]/(sum)
-
-#     ## add word counts
-#     df = []
-
-#     for i in df_idf['MLTC']:
-#         count = 0
-#         for k in bows:
-#             if i in k:
-#                 count = count +1            
-#         df.append(count)
-
-#     df_idf['word occurence in docs'] = df
-
-    # Add IDF to the terms relative weights
-    df_idf[colnames_final[0]] = df_idf[colnames_final[0]] * df_idf['occurrences']
-    df_idf[colnames_final[1]] = df_idf[colnames_final[1]] * df_idf['occurrences']
-    df_idf[colnames_final[2]] = df_idf[colnames_final[2]] * df_idf['occurrences']
-    df_idf[colnames_final[3]] = df_idf[colnames_final[3]] * df_idf['occurrences']
-
-    df_idf.sort_values(by=['occurrences'], ascending=False)
-    
-    ## cache for faster future use
-    df_idf.to_csv(TERMS_REL_WEIGHTS_IDF)    
-
-    return df_idf
 
 
 ### Create a word cloud with calculated association strength (idf * relative weights)
@@ -260,71 +169,8 @@ def getStages(bow):
         return stages
 
 
-# look up each term in bowStage. add up all partial association strength for each topic, generating an array of size K = number of topic
-def assoc(bowstage, rwidf, topics_count):
-    assocVector = np.zeros(topics_count)
-    for term in bowstage:
-        row = rwidf.loc[rwidf['MLTC'] == term]
-#         print(row[['rwidf1', 'rwidf2', 'rwidf3', 'rwidf4']])
-        assocVector[0] += row['rwidf1']
-        assocVector[1] += row['rwidf2']
-        assocVector[2] += row['rwidf3']
-        assocVector[3] += row['rwidf4']
-    return assocVector
 
 
-
-##########################
-### compute the tensor that holds the patient-topic association __for incremental bag of terms in the patient's history__
-##########################
-
-## main method to compute the 'tensor' as a nested dictionary:
-# bows = list(bow)
-# bow = list(bowStage)
-# bowStage = list(term)
-# term --> association vector of size K = number of topics
-# so:
-#    all_patients_traj = { id(bow): one_patient_trajectory}
-#    one_patient_trajectory = { id(bowStage): assoc vector}
-#  to use hashing we need to create an id for each bow (id=patient) and one id for each stage in that patient's history.
-#  note that these are not the native patient IDs which are lost at this point
-#
-# return all_patients_traj
-#
-
-def computeTrajectoryAssociations(bows, rwidf, topics_count):
-
-    bowID2bow = dict()  ## need to use bowIDs as hash keys so this dict maps bowID to the actual bow content
-    bowId = 1 # makes hashing possible
-    all_patients_traj = dict()  ## top level dict
-    
-    for bow in bows:    # for each bag of word (each patient)
-#         print("processing bowId {0}: [{1}]".format(bowId, bow))
-        
-        bowID2bow[bowId] = bow
-        traj = all_patients_traj[bowId] = dict()  ## individual trajectory is itself a dict()
-        bowStageId = 1
-        for bowStage in getStages(bow):  # compute association vector for each of its stages
-#             print("processing bowStage [{0}]".format(bowStage))
-            
-            traj[bowStageId]  = assoc(bowStage, rwidf, topics_count)
-#             print("vector for bowStageId [{0}]: {1}".format(bowStageId, traj[bowStageId]))
-            bowStageId += 1
-#         print("trajectory: {0}\n".format(traj))
-        bowId += 1
-        if bowId % 1000 == 0:
-            print("{0} patients processed".format(bowId))
-#             break
-            
-    ## save main trajectories data structure
-
-    with open(ALL_TRAJECTORIES, 'wb') as f:
-        pickle.dump(all_patients_traj, f)
-
-    with open(BOWID2BOW, 'wb') as f:
-        pickle.dump(bowID2bow, f)
-
-    return all_patients_traj, bowID2bow
 
 
 def pprint(trajectory):
