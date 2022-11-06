@@ -18,6 +18,8 @@ import pyLDAvis.gensim_models
 import matplotlib.colors as mcolors
 from matplotlib import pyplot as plt
 
+from os import path
+
 from Constants import *
 
 
@@ -70,45 +72,6 @@ def create_bows(bin_matrix):
 
 
 
-### Create a word cloud with calculated association strength (idf * relative weights)
-
-def createWordClouds(df_idf):
-    # Wordcloud of Top N LTCs for each topic based on association strength
-
-    i = 1
-    for j in df_idf.columns[6:10]:
-
-        ltc_dic = pd.Series(df_idf[j].values,index=df_idf.MLTC).to_dict()
-
-        colrs = [color for name, color in mcolors.TABLEAU_COLORS.items()]
-        cloud = WordCloud(background_color='white',
-                        width=2500,
-                        height=1800,
-                        max_words=10,
-                        colormap='tab10',
-                        color_func=lambda *args, **kwargs: colrs[i],
-                        prefer_horizontal=1.0)
-
-        topics = df_idf[[j]] # Since we have fixed the topics to 4, we can change this to make it dynamic
-
-        if i < 9:
-            # fig.add_subplot(ax)
-            topic_words = ltc_dic
-            cloud.generate_from_frequencies(topic_words, max_font_size=300)
-            plt.gca().imshow(cloud)
-            titl = 'Topic ' + str(j[-1])
-            plt.gca().set_title(titl, fontdict=dict(size=16))
-            plt.gca().axis('off')
-
-
-        plt.subplots_adjust(wspace=0, hspace=0)
-        plt.axis('off')
-        plt.margins(x=0, y=0)
-        plt.tight_layout()
-        plt.show()
-        i = i+1
-
-        # fig.savefig("../images/topic0_relative_weight.png", dpi=60)
 
         
 # Topics generation
@@ -116,6 +79,7 @@ def createWordClouds(df_idf):
 # in: bow is the list of bag of words
 # in: topics_count is the number of topics to be generated
 # returns lda-model
+## this method saves the model as a pickle file -- using topics_count as suffix to separate different topics configurations
 
 def bagOfWords2Topics(bow, topics_count):
     id2word = corpora.Dictionary(bow)
@@ -136,8 +100,13 @@ def bagOfWords2Topics(bow, topics_count):
                                            alpha="asymmetric",
                                            eta=1.0)
     ## cache for future use
-    with open(LDA_MODEL, 'wb') as f:
+
+    ## suffix the base file name
+    LDA_MODEL_SUFF = path.dirname(LDA_MODEL)+ path.basename(LDA_MODEL).split('.')[0]+ "_"+ str(topics_count)+"."+path.basename(LDA_MODEL).split('.')[1]
+    
+    with open(LDA_MODEL_SUFF, 'wb') as f:
         pickle.dump(lda_model, f)
+        print("model saved to: {0}".format(LDA_MODEL_SUFF))
         
     return lda_model
 
@@ -154,6 +123,82 @@ def compute_all_bow_probabilities(lda_model):
         lda_res_each_ptnt.append(lda_model[bow])  ## these are the probabilities for this document for each topic
         
     return lda_res_each_ptnt
+
+
+# input: list of disease terms
+# input: corpus_size = number of bows
+# return list of ids ordered by the same order as the input terms
+def calculate_idf(terms, corpus_size, term_occur):
+    
+    idf = list()
+    for i in range (len(terms)):
+        idf.append(math.log10(corpus_size / (term_occur[terms[i]] + 1)))
+    return idf
+
+
+## return a dict term:<number of occurrences>
+def term_occurrences(bows):
+    
+    term_occur = dict()    
+    for bow in bows:
+        for t in bow:
+            try:
+                term_occur[t] = term_occur[t] + 1
+            except:
+                term_occur[t] = 1
+    return term_occur
+
+
+# Build a dataframe with each term's relative weight within each topic
+# in: lda_model
+
+## input:
+## LDA model computed in the previous step
+## number of topics in the model
+
+## 1 get terms  native weights from lda_model: weight(term, topic)
+## 2 calculate idf for each term in the corpus idf(term)
+## to eeach term in topic assign weight  weight(term, topic) * idf(term)
+## return dataframe df_idf with schema ['MLTC', topic1, ..., topicl]
+def compute_terms_topics_associations(lda_model, topics_count, list_of_ltcs, bows):
+
+    ## create dataframe with schema ['MLTC', 'topic_1',  'topic_2', ..., 'topic_k']
+    topics_columns = [ "topics_"+str(i) for i in range(topics_count)]
+
+    cols = ['MLTC']
+    [ cols.append(t) for t in topics_columns]
+    weighted_topics_df = pd.DataFrame(columns=cols)
+    weighted_topics_df['MLTC'] = list_of_ltcs.columns
+
+    ## get native term weights from LDA
+    term_weights = lda_model.show_topics(num_words=300, formatted=False)
+
+    ## step 1: populate weighted_topics_df with native LDA term weight
+    for t in range(len(topics_columns)):
+        weights_for_topic = [ x for (name, x) in term_weights[t][1]]
+        weighted_topics_df[topics_columns[t]] = weights_for_topic
+
+    ## step 2: calculate idf for each term, add idf as new column, calculate weighted terms and add them as new columns
+    term_occur = term_occurrences(bows) ## term --> number of occurrences
+
+    idf = calculate_idf(list_of_ltcs.columns, len(bows), term_occur)
+
+    weighted_topics_df['idf'] = idf
+    
+    sum = 0
+    for i in range(len(topics_columns)):
+        sum += weighted_topics_df[topics_columns[i]]
+
+    weighted_topics_df['sums'] = sum
+    
+    topics_columns = [ "weighted_topics_"+str(i) for i in range(topics_count)]
+
+    for i in range( len(topics_columns)):
+        weighted_topics_df[topics_columns[i]] = weighted_topics_df[cols[i+1]] / weighted_topics_df['sums']* idf
+
+    weighted_topics_df['term_occurrences'] = term_occur.values()
+    
+    return weighted_topics_df, topics_columns
 
 
 
